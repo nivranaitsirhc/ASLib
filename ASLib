@@ -1,335 +1,116 @@
 #!/sbin/sh
 #
-#	aslib.functions
+#	General Auto Script Library (ASLib)
 #
+#	CODR: Christian Arvin Catajoy Cabo
+#	CODE: C.A.ASLib
+#
+#	Description:
+#
+#	 A collection set of functions used in recovery and upgrade structure design
+#   for custom recoveries (e.g. TWRP) and ROM OS's (e.g. Lineage OS).
+#	1.)If you are going to use my script please do not remove this header.
+#	2.)You can use it freely as much as you want.
+#	3.)You are allowed to modify this script.
+#	4.)If modification has caused the whole script to be unrecognizably different
+#	   from my original script, just reference me and this script on the header.
+#
+#	Info
+#		
+#
+#	Global Folder and File Structures
 #	
-#	Auto-Script Functions
+#	ASLib 				- This Script (dependent on ASLib_logmsg and ASLib_ui_print)
+#	ASLib_ui_print		- ui_print module (important)
+#	ASLib_logmsg		- logMsg (important)
 #
-#	Collection of General Function useful in recovery
-#
-#   Expected to be present in /data/aslib.functions
+#	Global Export Variables
+#	ASLib_ver
 #
 
 
 # Global Variables												#
 #---------------------------------------------------------------#
-#					# !----Do not Modify-----! aslib function version checking and survival
-asver=1007
-logMsg_init=false	# set this to true to bypass LogMsg requirements
-LT1=LogMsg_dummy	# !----Do not Modify-----! Logging Tag-1 LogMsg_dummy means disabled
-LT2=LogMsg_dummy	# !----Do not Modify-----! Logging Tag-2 LogMsg_dummy means disabled
-LT3=LogMsg_dummy	# !----Do not Modify-----! Logging Tag-3 LogMsg_dummy means disabled
-#					# !----Do not Modify-----!
-if [ -z "$Target_LogName" ];then Target_LogName=logs;fi
-#					# !----Do not Modify-----! Enable or Disable Logging
-if [ -z "$Logging" ];then Logging=true;fi
-#					# !----Do not Modify-----! flashmode or upgrademode
-if [ -z "$LogType" ];then LogType=flashmode;fi
-#					# !----Do not Modify-----! 1 - basic, 2 - enough, 3 - full
-if [ -z "$loggingLevel" ];then loggingLevel=1;fi
-#					# !----Do not Modify-----!
-if [ -z "$Target_LogPoint" ];then Target_LogPoint=/sdcard;fi
-#					# !----Do not Modify-----!
-if [ -z "$LogInit" ];then LogInit=false;fi
-#					# !----Do not Modify-----!
-if [ -z "$logfileName" ];then logfileName=default_log;fi
+# ASLib Version
+export ASLib_ver=1007
 
-# Pre-Initialization											#
-#---------------------------------------------------------------#
-
-# UI Print Pre-Initialization
-if [ -z $LESSLOGGING ];then LESSLOGGING=false;fi
-UI_PRINT_LAST=""
-
-# Wipe Files Dependent Variables
-WM1="Deleted  : -"	# !-----Do not Modify-----! Wipe message 1
-WM2="Delete Error"	# !-----Do not Modify-----! Wipe message 2
+# Load sub-modules of ASLib
+if [ ! -z "$LIBS" ];then
+	for MODULES in `ls $LIBS | grep ASLib*`; do
+		if [ "$MODULES" != "ASLib" ]; then
+			. $LIBS/$MODULES
+		fi
+	done
+elif [ -e /data/ASLib ];then
+	for MODULES in `ls /data/ASLib | grep ASLib*`; do
+		if [ "$MODULES" != "ASLib" ]; then
+			. /data/$MODULES
+		fi
+	done
+else
+	echo "ASLib Itegrity Error Missing ASLib Modules, is everything alright?"
+fi
 
 
-# Custom Functions												#
-#---------------------------------------------------------------#
+# Functions
+#	ex_s()
+#	progress()
+#	set_progress()
+#	is_mounted()
+#	set_perm()
+#	cp_perm
+#	ch_con
+#	ln_con
+#	toolbox_mount
+#	remount_mountpoint
+#	wipe_files
+#	getvar
+#	installfile
+#
+
+#ui title
+# Displays The Title header stored in TMH(x)
+# Careful init.fd must be called first before using this function
+ui_title(){
+$LT2 "ui_tittle started"
+local set
+while true;do
+	set=$(($set+1))
+	eval val='$'TH${set}
+	if [ ! -z "$val" ];then
+		ui_print "$val"
+	else
+		break
+	fi
+done
+}
 
 # Exit Script with Message
 ex_s(){
-	$LT1 "FUNC ex_s"
 	ui_print "Error: $@"
 	exit 1
 }
 
-# Displays The Title header stored in TMH(x)
-tittle_header(){
-$LT1 "FUNC tittle_header"
-# Careful init.fd must be called first before using this function
-if [ ! -z "$TMH0" ];then
-	ui_print "$TMH0"
-fi
-set=
-while true;do
-	set=$(($set+1))
-	eval val='$'TMH${set}
-	if [ ! -z "$val" ];then
-		if [ "$1" == "log_o" ];then
-			LogMsg "$val" "uip"
-		else
-			ui_print "$val"
-		fi
-	else
-		break
-	fi
-done
-}
-
-# ui_print fd check
-init_fd(){
-$LT1 "FUNC init_fd"
-# we are probably running in embedded mode, see if we can find the right fd
-# we know the fd is a pipe and that the parent updater may have been started as
-# 'update-binary 3 fd zipfile'
-for FD in `ls /proc/$$/fd`; do
-	readlink /proc/$$/fd/$FD 2>/dev/null | grep pipe >/dev/null
-	if [ "$?" -eq "0" ]; then
-	  ps | grep " 3 $FD " | grep -v grep >/dev/null
-	  if [ "$?" -eq "0" ]; then
-		OUTFD=$FD
-		break
-	  fi
-	fi
-done
-# OUTFD=`ps | grep -v grep | grep -oE "update(.*)" | cut -d" " -f3`
-}
-
-is_aslib_functional(){
-	return 0
-	return $?
-}
-# set LogMessage to enable or disable
-# - set_LogMsg input1 or null
-# - input1 	-> true,1,enable or false,0,disable
-# - null	-> if no input this will toggle.
-#
-set_LogMsg(){
-if [ -n $1 ];then
-	# detect inputs
-	case STATUS in
-	1|true|enable) Logging=true
-		ui_print "LogMessage set to True"
-		;;
-	0|false|disable) Logging=false
-		ui_print "LogMessage set to False"
-		;;
-	esac
-else
-	case $Logging in
-	true) Logging=false
-		ui_print "LogMessage set to false"
-		;;
-	false) Logging=true
-		ui_print "LogMessage set to true"
-		;;
-	esac
-fi
-}
-
-# Setup LoggingLevel
-set_LogMsg_LoggingLevel(){
-	if [ ! -z "$1" ];then
-		case $1 in
-			1)	LT1=LogMsg
-				LT2=LogMsg_dummy
-				LT3=LogMsg_dummy
-				LogMsg "Logging set to 1" "uip"
-				;;
-			2)	LT1=LogMsg
-				LT2=LogMsg
-				LT3=LogMsg_dummy
-				LogMsg "Logging set to 2" "uip"
-				;;
-			3)	LT1=LogMsg
-				LT2=LogMsg
-				LT3=LogMsg
-				LogMsg "Logging set to 3" "uip"
-				;;
-		esac
-	else
-		LT1=LogMsg_dummy
-		LT2=LogMsg_dummy
-		LT3=LogMsg_dummy
-	fi
-}
-
-# Setup LogMsg LogType
-# - Setup logging type and logging path
-# - default flashmode
-#
-# - set_LogMsg_logType input1
-# - input1	-> falshmode or upgrademode default is flashmode
-#
-set_LogMsg_logType(){
-if [ -n $1 ];then
-	case $1 in
-		flash|flashlogs|flashmode) LogType=flashmode
-			;;
-		up|upgrade|upgrademode) LogType=upgrademode
-			;;
-		*) LogType=custom
-			CustomLogType=$*
-			;;
-	esac
-else
-	LogType=flashmode
-fi
-}
-
-# Initialize LogginPath
-init_LogMsg(){
-# setup logging directory
-	case $LogType in
-		flashmode)		LogPath=$Target_LogPoint/$Target_LogName/flashlogs
-		;;
-		upgrademode) 	LogPath=$Target_LogPoint/$Target_LogName/upgradelogs
-		;;
-		custom)			LogPath=$Target_LogPoint/$Target_LogName/$CustomLogType
-		;;
-	esac
-	if [ ! -e "$Target_LogPoint/$Target_LogName" ];then
-		ui_prinnt "$(mkdir $Target_LogPoint/$Target_LogName)"
-	fi
-	if [ ! -e $LogPath ]; then
-		mkdir $LogPath
-	fi
-	if (! is_mounted $Target_LogPoint rw);then
-		remount_mountpoint $Target_LogPoint rw
-	fi
-	# setup logging file
-	DateTime=`date "+%Y-%m-%d_%H-%M-%S"`
-	logfile=$LogPath/$logfileName-$DateTime.log
-	if [ -e $logfile ]; then
-		# should not happen
-		rm -f $logfile
-	fi
-	set_LogMsg_LoggingLevel $loggingLevel
-}
-
-# Log Message Functions
-# 
-# LogMessages to file.
-#
-# Dependent Variables
-# - #logfile -> logfile target
-# 
-# Accepted Inputs
-# - LogMsg input1 input2 input3
-#   input1 -> LogTag "L1,L2,L3,L4"
-# - input2 -> "message"
-# - input3 -> "H" input1 would be treated as a header log else it will be a ordinary log.
-# - null   -> if blank no logs will be printed
-#
-# #added 01/10/2018
-#    Logging Schema
-# LV1 -
-# LV2 -
-# LV3 -
-# LV4 -
-#
-# Other method of Logging
-# - echo "log message" 2>&1 | LogMsg
-# 
-LogMsg() {
-	# Determine if Logging is set globaly
-	if ($logging);then
-		# check if input1 has "H" tag
-		if [ -n "$*" ]; then
-			case "$1" in
-				L1) #Level1 same as H tag.
-					IN="  $2"
-				;;
-				L2) #Level2
-					IN="  --> $2"
-				;;
-				L3) #Level3
-					IN="$2"
-				;;
-				L4) #Level4
-					IN="$2"
-				;;
-				H)  #HeaderTag
-					IN="$2"
-				;;
-				*)  #Normal
-					IN="$*"
-				;;
-			esac
-		else
-			read IN
-			if [ ! -z "$IN" ];then
-				IN="  -$IN"
-			fi
-		fi
-		if [ -n "$IN" ]; then
-			LogTime=`date "+%H:%M:%S"`
-			echo "$LogTime $IN" >> $logfile
-		fi
-	fi
-}
-#
-LogMsg_dummy(){ # Log Message Dummy Function
-# Dummy LogMessage
-	return 0
-}
-
-
-# Functions														#
-#---------------------------------------------------------------#
-
-# UI Print Function "Itegrated to LogMsg"
-#
-# Print's Text to FD
-# 
-# Dependent Variables
-# - LESSLOGGING	-> "true or false" can be ignored.
-#
-# Sub-Functions
-# - ui_print_less
-# - ui_print_always
-#
-ui_print() {
-  if (! $LESSLOGGING); then
-    UI_PRINT_LAST="$1"
-    ui_print_always "$1"
-  fi
-}
-ui_print_less() {
-  if ($LESSLOGGING); then
-    ui_print_always "$1"
-  fi
-}
-ui_print_always() {
-	if [ ! -z "$1" ];then
-	  LogMsg "$1" "uip" # Integrated to LogMsg
-	fi
-	echo -n -e "ui_print $1\n" >> /proc/self/fd/$OUTFD
-	echo -n -e "ui_print\n" >> /proc/self/fd/$OUTFD
-	echo "$1"
-}
-
 # Progress
 # - Print progress to pipe
-#
-# Dependent Variables
-# - $OUTFD must be defined in Pre-Initialization !--Important--!
+# $OUTFD must be defined.
 #
 progress() {
   if [ $OUTFD != "" ]; then
     echo "progress ${1} ${2} " 1>&$OUTFD;
+	# LogTag
+	$LT3 "progress set to $*"
   fi;
 }
 set_progress() {
   if [ $OUTFD != "" ]; then
     echo "set_progress ${1} " 1>&$OUTFD;
+	# LogTag
+	$LT3 "progress set to $*"
   fi;
 }
 
-# Is Mounted?
+# is Mounted?
 # - Check's if mountpoint is mounted.
 #
 # Usage
@@ -339,7 +120,7 @@ set_progress() {
 # - returns value
 #
 is_mounted() {
-	$LT3 "FUNC is_mounted $1, $2"
+	$LT2 "is_mounted $*"
 	if [ ! -z "$2" ]; then
 		cat /proc/mounts | grep $1 | grep $2,
 	else
@@ -352,24 +133,24 @@ is_mounted() {
 # - Set's up permission
 #
 # - set_perm	input1 input2 input3 input4 input 5
-# - input1		-> chown user	!--important--!
-# - input2		-> chown group	!--important--!
-# - input3		-> chmod setup	!--important--!
-# - input4		-> targer_file	!--important--!
-# - input5		->
+#   input1		-> chown user	!--important--!
+#   input2		-> chown group	!--important--!
+#   input3		-> chmod setup	!--important--!
+#   input4		-> targer_file	!--important--!
+#   input5		->
 #
 # - Sub Functions
-# - ch_con		input4
-# - ch_con_ext	input4 input5
+#   ch_con		input4
+#   ch_con_ext	input4 input5
 set_perm() {
-	$LT3 "FUNC set_perm $1, $2, $3, $4, $5"
+	$LT2 "set_perm $1, $2, $3, $4, $5"
 	if [ -z "$1" ] && [ -z "$2" ] && [ -z "$3" ] && [ -z "$4" ];then
-		$LT3 "not performing chown_chmod incomplete input"
-		$LT3 "chown_chmod -$1, -$2, -$3, -$4"
+		$LT3 "not performing set_perm incomplete input"
+		$LT3 "set_perm -$1, -$2, -$3, -$4"
 	else
-		chown $1.$2 $4	2>&1 | $LT3
-		chown $1:$2 $4	2>&1 | $LT3
-		chmod $3 $4		2>&1 | $LT3
+		chown $1.$2 $4	2>&1 | $LT4
+		chown $1:$2 $4	2>&1 | $LT4
+		chmod $3 $4		2>&1 | $LT4
 	fi
 	if [ -z "$4" ];then
 		$LT3 "not performing chcon missing input"
@@ -382,46 +163,109 @@ set_perm() {
 }
 # copy permission
 cp_perm() {
-	$LT3 "FUNC cp_perm $1, $2, $3, $4, $5, $6"
-	rm $5 2>&1 | $LT3
+	$LT2 "cp_perm $1, $2, $3, $4, $5, $6"
+	rm $5 2>&1 | $LT4
 	if [ -f "$4" ]; then
 	cat $4 > $5
 	set_perm $1 $2 $3 $5 $6
 	fi
 }
+
+# Wipe Files
+# - wipe files recursively or specifically
+#
+# - wipe_files	input1 input2
+# - input1 		-> $data_file		!--Important--!
+# - input2		-> fancy message
+#
+wipe_files() {
+	# Added 08:43 08/05/2017
+	# wipe_files is intended for /system wipe. usage for explicit file is not encourage
+	# it will be inefficient use rm -f instead, but we will still handle explicit call.
+	$LT2 "wipe_files $*"
+	local FILE_DIR
+	local STATUS=true
+	# let's handle multiple inputs
+	for TARGET in $*;do
+		$LT3 "processing $TARGET"
+		# Determine if used as explicit
+		if [ -e $TARGET ];then
+			# the location is explicit
+			$LT3 "$TARGET is explicit"
+			FILE_DIR=$TARGET
+		elif [ -e /system/$TARGET ];then 
+			# let's assume its not explicit
+			$LT3 "target is system wipe"
+			FILE_DIR=/system/$TARGET
+		else
+			$LT3 "ERROR $TARGET does not exist"
+			STATUS=false
+		fi
+		# Let's begin
+		if ($STATUS);then
+			if [ -d $FILE_DIR ];then
+				for FILE in `ls $FILE_DIR`;do
+					$LT3 "removing $FILE_DIR/$FILE"
+					rm -rf "$FILE_DIR/$FILE" 2>&1 | $LT4
+					# lets check if the file was deleted succesfully
+					wipe_file_check "$FILE_DIR/$FILE"
+				done
+				$LT3 "removing $FILE_DIR"
+				rm -rf $FILE_DIR 2>&1 | $LT4
+				wipe_file_check "$FILE_DIR"
+			else 
+				$LT3 "removing $FILE_DIR"
+				rm -f "$FILE" 2>&1 | $LT4
+				# lets check if the file was deleted succesfully
+				wipe_file_check "$FILE_DIR"
+			fi
+		fi
+	done
+}
+
+wipe_file_check(){
+	$LT3 "checking file status: $*"
+	if [ -e "$*" ];then
+		$LT3 "$* was failed to be removed"
+	else
+		$LT3 "$* was removed"
+	fi
+}
+
+
 # change con
 ch_con() {
-	$LT3 "FUNC ch_con $1"
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox chcon -h u:object_r:system_file:s0 $1 	2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox chcon -h u:object_r:system_file:s0 $1 		2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox chcon -h u:object_r:system_file:s0 $1 	2>&1 | $LT3
+	$LT2 "ch_con $*"
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox chcon -h u:object_r:system_file:s0 $1 	2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox chcon -h u:object_r:system_file:s0 $1 		2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox chcon -h u:object_r:system_file:s0 $1 	2>&1 | $LT4
 	chcon -h u:object_r:system_file:s0 $1
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox chcon u:object_r:system_file:s0 $1 		2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox chcon u:object_r:system_file:s0 $1 			2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox chcon u:object_r:system_file:s0 $1 		2>&1 | $LT3
-	chcon u:object_r:system_file:s0 $1 														2>&1 | $LT3
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox chcon u:object_r:system_file:s0 $1 		2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox chcon u:object_r:system_file:s0 $1 			2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox chcon u:object_r:system_file:s0 $1 		2>&1 | $LT4
+	chcon u:object_r:system_file:s0 $1 														2>&1 | $LT4
 }
 ch_con_ext() { # sub-function of set_perm
-	$LT3 "FUNC ch_con $1, $2"
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox chcon $2 $1 								2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox chcon $2 $1 									2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox chcon $2 								2>&1 | $LT3
-	chcon $2 $1 																			2>&1 | $LT3
+	$LT3 "ch_con_ext $*"
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox chcon $2 $1 								2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox chcon $2 $1 									2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox chcon $2 								2>&1 | $LT4
+	chcon $2 $1 																			2>&1 | $LT4
 }
 
 # Link Con
 ln_con() {
-	$LT3 "FUNC ln_con $1, $2"
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox ln -s $1 $2 2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox ln -s $1 $2 2>&1 | $LT3
-	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox ln -s $1 $2 2>&1 | $LT3
-	ln -s $1 $2 2>&1 | $LT3
+	$LT2 "ln_con $*"
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toybox ln -s $1 $2 2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/toolbox ln -s $1 $2 2>&1 | $LT4
+	LD_LIBRARY_PATH=$SYSTEMLIB /system/bin/toolbox ln -s $1 $2 2>&1 | $LT4
+	ln -s $1 $2 2>&1 | $LT4
 	ch_con $2
 }
 
 # Toolbox Mount Method
 toolbox_mount() {
-	$LT2 "FUNC toolbox_mount $1, $2"
+	$LT2 "toolbox_mount $*"
 	RW=rw
 	if [ ! -z "$2" ]; then
 	RW=$2
@@ -440,8 +284,8 @@ toolbox_mount() {
 			break
 		fi
 	done
-	if (! is_mounted $1 $RW); then mount -t $FS -o $RW $DEV $POINT 					2>&1 | $LT3; fi
-	if (! is_mounted $1 $RW); then mount -t $FS -o $RW,remount $DEV $POINT 			2>&1 | $LT3; fi
+	if (! is_mounted $1 $RW); then mount -t $FS -o $RW $DEV $POINT 					2>&1 | $LT4; fi
+	if (! is_mounted $1 $RW); then mount -t $FS -o $RW,remount $DEV $POINT 			2>&1 | $LT4; fi
 
 	DEV=
 	POINT=
@@ -457,13 +301,13 @@ toolbox_mount() {
 		fi
 	done
 	if [ "$FS" = "emmc" ]; then
-		if (! is_mounted $1 $RW); then mount -t ext4 -o $RW $DEV $POINT 			2>&1 | $LT3; fi
-		if (! is_mounted $1 $RW); then mount -t ext4 -o $RW,remount $DEV $POINT 	2>&1 | $LT3; fi
-		if (! is_mounted $1 $RW); then mount -t f2fs -o $RW $DEV $POINT 			2>&1 | $LT3; fi
-		if (! is_mounted $1 $RW); then mount -t f2fs -o $RW,remount $DEV $POINT 	2>&1 | $LT3; fi
+		if (! is_mounted $1 $RW); then mount -t ext4 -o $RW $DEV $POINT 			2>&1 | $LT4; fi
+		if (! is_mounted $1 $RW); then mount -t ext4 -o $RW,remount $DEV $POINT 	2>&1 | $LT4; fi
+		if (! is_mounted $1 $RW); then mount -t f2fs -o $RW $DEV $POINT 			2>&1 | $LT4; fi
+		if (! is_mounted $1 $RW); then mount -t f2fs -o $RW,remount $DEV $POINT 	2>&1 | $LT4; fi
 	else
-		if (! is_mounted $1 $RW); then mount -t $FS -o $RW $DEV $POINT 				2>&1 | $LT3; fi
-		if (! is_mounted $1 $RW); then mount -t $FS -o $RW,remount $DEV $POINT 		2>&1 | $LT3; fi
+		if (! is_mounted $1 $RW); then mount -t $FS -o $RW $DEV $POINT 				2>&1 | $LT4; fi
+		if (! is_mounted $1 $RW); then mount -t $FS -o $RW,remount $DEV $POINT 		2>&1 | $LT4; fi
 	fi
 }
 
@@ -474,61 +318,19 @@ toolbox_mount() {
 # - input1 -> target mount_point "/system etc." 
 #
 remount_mountpoint() {
-	$LT2 "FUNC remount_mountpoint $1, $2"
+	$LT2 "remount_mountpoint $1, $2"
 	if [ -n "$*" ];then
-		if (! is_mounted $1 $2); then mount -o $2,remount $1 		2>&1 | $LT3; fi
-		if (! is_mounted $1 $2); then mount -o $2,remount $1 $1 	2>&1 | $LT3; fi
-		if (! is_mounted $1 $2); then toolbox_mount $1 				2>&1 | $LT3; fi
+		if (! is_mounted $1 $2); then mount -o $2,remount $1 		2>&1 | $LT4; fi
+		if (! is_mounted $1 $2); then mount -o $2,remount $1 $1 	2>&1 | $LT4; fi
+		if (! is_mounted $1 $2); then toolbox_mount $1 				2>&1 | $LT4; fi
 		if (! is_mounted $1 $2); then status=1;else status=0;fi
 		return $status
 	fi
 }
 
-# Wipe Files
-# - wipe files recursively or specifically
-#
-# - wipe_files	input1 input2
-# - input1 		-> $data_file		!--Important--!
-# - input2		-> fancy message
-#
-wipe_files() {
-	# Added 08:43 08/05/2017
-	$LT1 "FUNC wipe_files"
-	# Delete files inside the target folder
-	if [ -z "$1" ];then
-		$LT1 "null Input"
-	else
-		for FILE_DIR in $1; do
-			# Lets check if it exist
-			if [ -e "/system/$FILE_DIR" ]; then
-				# Lets determine if its a directory
-				if [ -d "/system/$FILE_DIR" ]; then
-					# then lets delete everything inside the directory inclusive
-					rm -rf "/system/$FILE_DIR" 2>&1 | $LT3
-					# lets check again if it was deleted succesfully
-					if [ ! -e "/system/$FILE_DIR" ]; then
-						$LT2 "$WM1 $FILE_DIR" 
-					else
-						$LT2 "$WM2 $ERROR"
-					fi
-				else
-					# If it comes here then we delete just the file
-					rm -f "/system/$FILE_DIR" 2>&1 | $LT3
-					# lets check if the file was deleted succesfully
-					if [ ! -e "/system/$FILE_DIR" ]; then
-						$LT2 "$WM1 $FILE_DIR - using default method"
-					else
-						$LT2 "$WM2 $ERROR"
-					fi
-				fi
-			fi
-		done
-	fi
-}
-
 # Get Variables
 getvar() {
-	$LT3 "FUNC getvar $1"
+	$LT2 "getvar $1"
 	local VARNAME=$1
 	local VALUE=$(eval echo \$"$VARNAME");
 	for FILE in /data/.supersu /cache/.supersu /system/.supersu; do
@@ -544,7 +346,7 @@ getvar() {
 
 # 'readlink -f' is not reliable across devices/recoveries, this works for our case
 resolve_link() {
-	$LT3 "FUNC resolve_link $1"
+	$LT2 "resolve_link $1"
 	local RESOLVE=$1
 	local RESOLVED=
 	while (true); do
@@ -557,6 +359,7 @@ resolve_link() {
 		fi
 	done
 }
+
 
 # Functions SU-Exclusive										#
 #---------------------------------------------------------------#
@@ -801,200 +604,32 @@ resolve_link() {
 
 # remount system as read-write
 remount_system_rw() {
-	$LT3 "FUNC remount_rw"
+	$LT2 "remount_rw"
 	if (! is_mounted /system rw); then mount -o rw,remount /system; fi
 	if (! is_mounted /system rw); then mount -o rw,remount /system /system; fi
 	if (! is_mounted /system rw); then toolbox_mount /system; fi
 }
 
-# wipe previous su system files
-wipe_system_files_if_present() {
-	$LT3 "FUNC wipe_data_competitors_and_cache"
-  GO=false
-  SYSTEMFILES="
-    /system/xbin/daemonsu
-    /system/xbin/sugote
-    /system/xbin/sugote-mksh
-    /system/xbin/supolicy
-    /system/xbin/ku.sud
-    /system/xbin/.ku
-    /system/xbin/.su
-    /system/lib/libsupol.so
-    /system/lib64/libsupol.so
-    /system/bin/.ext/.su
-    /system/etc/init.d/99SuperSUDaemon
-    /system/etc/.installed_su_daemon
-    /system/app/Superuser.apk
-    /system/app/Superuser.odex
-    /system/app/Superuser
-    /system/app/SuperUser.apk
-    /system/app/SuperUser.odex
-    /system/app/SuperUser
-    /system/app/superuser.apk
-    /system/app/superuser.odex
-    /system/app/superuser
-    /system/app/Supersu.apk
-    /system/app/Supersu.odex
-    /system/app/Supersu
-    /system/app/SuperSU.apk
-    /system/app/SuperSU.odex
-    /system/app/SuperSU
-    /system/app/supersu.apk
-    /system/app/supersu.odex
-    /system/app/supersu
-    /system/app/VenomSuperUser.apk
-    /system/app/VenomSuperUser.odex
-    /system/app/VenomSuperUser
-  "
-  for FILE in $SYSTEMFILES; do
-    if [ -d "$FILE" ]; then GO=true; fi
-    if [ -f "$FILE" ]; then GO=true; fi
-  done
-
-  RMSU=false
-  if (! $RWSYSTEM); then
-    if [ -f "/system/xbin/su" ]; then
-      # only remove /system/xbin/su if it's SuperSU. Could be firmware-included version, we
-      # do not want to cause remount for that
-      SUPERSU_CHECK=$(cat /system/xbin/su | grep SuperSU)
-      if [ $? -eq 0 ]; then
-        GO=true
-        RMSU=true
-      fi
-    fi
-
-    SPECIALSYSTEMFILES="
-      /system/etc/install-recovery_original.sh
-      /system/bin/install-recovery_original.sh
-      /system/bin/app_process32_original
-      /system/bin/app_process32_xposed
-      /system/bin/app_process64_original
-      /system/bin/app_process64_xposed
-      /system/bin/app_process_init
-    "
-    for FILE in $SPECIALSYSTEMFILES; do
-      if [ -d "$FILE" ]; then GO=true; fi
-    done
-  fi
-
-  if ($GO); then
-    if (! $RWSYSTEM); then
-      ui_print "- Remounting system r/w :("
-      remount_system_rw
-    fi
-
-    for FILE in $SYSTEMFILES; do
-      if [ -d "$FILE" ]; then rm -rf $FILE; fi
-      if [ -f "$FILE" ]; then rm -f $FILE; fi
-    done
-
-    if (! $RWSYSTEM); then
-      # remove wrongly placed /system/xbin/su as well
-      if ($RMSU); then
-        rm -f /system/xbin/su
-      fi
-
-      # Restore install-recovery and app_process from system install
-      # Otherwise, our system-less install will fail to boot
-      if [ -f "/system/etc/install-recovery_original.sh" ]; then
-        rm -f /system/etc/install-recovery.sh
-        mv /system/etc/install-recovery_original.sh /system/etc/install-recovery.sh
-      fi
-      if [ -f "/system/bin/install-recovery_original.sh" ]; then
-        rm -f /system/bin/install-recovery.sh
-        mv /system/bin/install-recovery_original.sh /system/bin/install-recovery.sh
-      fi
-      if [ -f "/system/bin/app_process64_original" ]; then
-        rm -f /system/bin/app_process64
-        if [ -f "/system/bin/app_process64_xposed" ]; then
-          ln -s /system/bin/app_process64_xposed /system/bin/app_process64
-        else
-          mv /system/bin/app_process64_original /system/bin/app_process64
-        fi
-      fi
-      if [ -f "/system/bin/app_process32_original" ]; then
-        rm -f /system/bin/app_process32
-        if [ -f "/system/bin/app_process32_xposed" ]; then
-          ln -s /system/bin/app_process32_xposed /system/bin/app_process32
-        else
-          mv /system/bin/app_process32_original /system/bin/app_process32
-        fi
-      fi
-      if [ -f "/system/bin/app_process64" ]; then
-        rm /system/bin/app_process
-        ln -s /system/bin/app_process64 /system/bin/app_process
-      elif [ -f "/system/bin/app_process32" ]; then
-        rm /system/bin/app_process
-        ln -s /system/bin/app_process32 /system/bin/app_process
-      fi
-      rm -f /system/bin/app_process_init
-    fi
-  fi
-}
-
-# wipe other su
-wipe_data_competitors_and_cache() {
-	$LT3 "FUNC wipe_data_competitors_and_cache"
-  rm -f /data/dalvik-cache/*com.noshufou.android.su*
-  rm -f /data/dalvik-cache/*/*com.noshufou.android.su*
-  rm -f /data/dalvik-cache/*com.koushikdutta.superuser*
-  rm -f /data/dalvik-cache/*/*com.koushikdutta.superuser*
-  rm -f /data/dalvik-cache/*com.mgyun.shua.su*
-  rm -f /data/dalvik-cache/*/*com.mgyun.shua.su*
-  rm -f /data/dalvik-cache/*com.m0narx.su*
-  rm -f /data/dalvik-cache/*/*com.m0narx.su*
-  rm -f /data/dalvik-cache/*com.kingroot.kinguser*
-  rm -f /data/dalvik-cache/*/*com.kingroot.kinguser*
-  rm -f /data/dalvik-cache/*com.kingroot.master*
-  rm -f /data/dalvik-cache/*/*com.kingroot.master*
-  rm -f /data/dalvik-cache/*me.phh.superuser*
-  rm -f /data/dalvik-cache/*/*me.phh.superuser*
-  rm -f /data/dalvik-cache/*Superuser.apk*
-  rm -f /data/dalvik-cache/*/*Superuser.apk*
-  rm -f /data/dalvik-cache/*SuperUser.apk*
-  rm -f /data/dalvik-cache/*/*SuperUser.apk*
-  rm -f /data/dalvik-cache/*superuser.apk*
-  rm -f /data/dalvik-cache/*/*superuser.apk*
-  rm -f /data/dalvik-cache/*VenomSuperUser.apk*
-  rm -f /data/dalvik-cache/*/*VenomSuperUser.apk*
-  rm -f /data/dalvik-cache/*eu.chainfire.supersu*
-  rm -f /data/dalvik-cache/*/*eu.chainfire.supersu*
-  rm -f /data/dalvik-cache/*Supersu.apk*
-  rm -f /data/dalvik-cache/*/*Supersu.apk*
-  rm -f /data/dalvik-cache/*SuperSU.apk*
-  rm -f /data/dalvik-cache/*/*SuperSU.apk*
-  rm -f /data/dalvik-cache/*supersu.apk*
-  rm -f /data/dalvik-cache/*/*supersu.apk*
-  rm -f /data/dalvik-cache/*.oat
-  rm -rf /data/app/com.noshufou.android.su*
-  rm -rf /data/app/com.koushikdutta.superuser*
-  rm -rf /data/app/com.mgyun.shua.su*
-  rm -rf /data/app/com.m0narx.su*
-  rm -rf /data/app/com.kingroot.kinguser*
-  rm -rf /data/app/com.kingroot.master*
-  rm -rf /data/app/me.phh.superuser*
-}
-
 # check_zero "progress_message" "success message" "failure message" "command"
 check_zero() {
-	$LT3 "FUNC check_zero $1, $2, $3, $*"
-  if ($CONTINUE); then
-    if [ ! -z "$1" ]; then ui_print "$1"; fi
-    eval "$4"
-    if [ $? -eq 0 ]; then
-      if [ ! -z "$2" ]; then ui_print "$2"; fi
-    else
-      if [ ! -z "$3" ]; then
-        if [ ! -z "$1" ]; then
-          ui_print_less "$1"
-        else
-          ui_print_less "$UI_PRINT_LAST"
-        fi
-        ui_print_always "$3";
-      fi
-      CONTINUE=false
-    fi
-  fi
+	$LT2 "check_zero $1, $2, $3, $*"
+	if ($CONTINUE); then
+		if [ ! -z "$1" ]; then ui_print "$1"; fi
+		eval "$4"
+		if [ $? -eq 0 ]; then
+		  if [ ! -z "$2" ]; then ui_print "$2"; fi
+		else
+		  if [ ! -z "$3" ]; then
+			if [ ! -z "$1" ]; then
+			  ui_print_less "$1"
+			else
+			  ui_print_less "$UI_PRINT_LAST"
+			fi
+			ui_print_always "$3";
+		  fi
+		  CONTINUE=false
+		fi
+	fi
 }
 
 # check_zero_def "progress message" "command"
@@ -1004,7 +639,7 @@ check_zero_def() {
 
 # find boot image partition if not set already
 find_boot_image() {
-	$LT3 "FUNC find_boot_image"
+	$LT2 "find_boot_image"
   # expand the detection if we find more, instead of reading from fstab, because unroot
   # from the SuperSU APK doesn't have the fstab to read from
   if [ -z "$BOOTIMAGE" ]; then
@@ -1030,7 +665,7 @@ find_boot_image() {
 # - sepolicy has init load_policy or permissive init
 # It symlink/patches the relevant files to /data, and sets SYSTEMLESS variable if not already set
 detect_systemless_required() {
-	$LT3 "FUNC detect_systemless_required"
+  $LT2 "detect_systemless_required"
   OLD_SYSTEMLESS=$SYSTEMLESS
   if [ "$OLD_SYSTEMLESS" = "detect" ]; then
     # we don't override a pre-set true/false value
@@ -1169,18 +804,49 @@ detect_systemless_required() {
   fi
 }
 
+# used to copy aslib to data
+aslib_survival(){
+	$LT2 "ASLib Survival Script"
+	# mount data
+	remount_mountpoint /data rw
+	# create directory
+	if [ ! -e /data/ASLib ];then
+		$LT3 "creating ASLib dir in data"
+		mkdir /data/ASLib 2&>1 | $LT4
+	fi
+	# copy all ASLib files to /data/ASLib
+	$LT3 "copying ASLib files in $LIBS to data"
+	for LIB in `ls $LIBS | grep ASLib*`;do
+		cp $LIBS/$LIB /data/ASLib/$LIB
+		if [ -e /data/ASLib/$LIB ];then
+			$LT3 "copied $LIB succesfully"
+		else
+			$LT3 "ERROR failed to copy $LIB"
+		fi
+	done
+}
 
-# Post-Initialization											#
-#---------------------------------------------------------------#
+# install file
+# note.this will inflate file from zip to a specified directory
+installfile(){
+	$LT2 "Install $*"
+	local STATUS=true
+	#verify ZIP is defined
+	if [ -z "$ZIP" ];then
+		$LT3 "warning ZIP is not defined"
+		if [ -e "$3" ];then
+			$LT3 "ZIP defined at $3"
+			ZIP=$3
+			STATUS=true
+		else
+			$LT3 "ERROR unknown zip location"
+		fi
+	fi
+	if ($STATUS);then
+		unzip -o "$ZIP" "$1" -d "$2"
+	fi
+}
 
+# Init Functions
+init_logMsg
 
-#--------! Function Call is not allowed above this line!--------#
-#---------------------------------------------------------------#
-#--------! Function Call is not allowed above this line!--------#
-#---------------------------------------------------------------#
-
-
-
-#---------------------------------------------------------------#
-# Main															#
-#---------------------------------------------------------------#

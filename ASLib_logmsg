@@ -1,0 +1,220 @@
+#!/sbin/sh
+#
+# ASLib sub-module (independent)
+#
+# logMsg (ASLib Logger)
+# v1.0 - origin
+#
+# 
+#
+
+# General INFO
+#     Functions
+#	init_logMsg		- init Module (this will be automatically init by ASLib)
+#	set_logMsg		- set logMsg enabled or disabled
+#	set_loglevel	- set logging level (a blank call will default to 1)
+#	LT1				- for title's and messages
+#	LT2				- for functions and parameters
+#	LT3				- for functions and parameters and output
+#	LT4				- not implemented
+#	logMsg			- main
+#	logMsg_dummy	- dummy
+
+# Log Schema
+#	Tags
+#	$LT1		- log level one
+#	$LT2		- log level two
+#	$LT3		- log level three
+#	$LT4     	- log level four
+
+# LOGPOINT RoadMap
+# /sdcard/logs/flashlogs/DateTime-logname.log
+# +-----------+---------+---------+-------------+
+# |  LOGPATH  | LOGTYPE | LOGDATE |   LOGNAME   |
+# +---------------------+---------+----=--------+
+# |    User Defined     |---------| UserDefined |
+# +---------------------------------------------+
+# |                 LOGPOINT                    |
+#
+
+# Global Variables that need's to be defined.
+LOGSTATUS= 			# !----Do not Modify-----! defines if logging is enabled or disabled
+LOGPATH= 			# !----Do not Modify-----! defines the location of logpath
+LOGTYPE=			# !----Do not Modify-----! defines the type of installation
+LOGTYPE_CUSTOM=		# !----Do not Modify-----! defines the custom location of logpath
+LOGNAME=			# !----Do not Modify-----! defines the name of the logfile
+LOGPOINT=			# !----Do not Modify-----! defines the whole path and file of the log..
+LOGINIT=false		# !----Do not Modify-----! defines the init status of logging
+
+# initialize LOGPATH
+init_logMsg(){
+# setup logging directory
+	local _DATETIME
+	local _LOGPOINT
+	L1=logMsg_dummy	# !----Do not Modify-----! Logging Tag-1 logMsg_dummy means disabled
+	L2=logMsg_dummy	# !----Do not Modify-----! Logging Tag-2 logMsg_dummy means disabled
+	L3=logMsg_dummy	# !----Do not Modify-----! Logging Tag-3 logMsg_dummy means disabled
+	
+	if [ -z "$LOGSTATUS" ];then LOGSTATUS=true;fi
+	if [ -z "$LOGPATH" ];then LOGPATH=/sdcard/logs;fi
+	if [ -z "$LOGTYPE" ];then LOGTYPE=flashmode;fi
+	if [ -z "$LOGTYPE_CUSTOM" ];then LOGTYPE_CUSTOM=custom;fi
+	if [ -z "$LOGNAME" ];then LOGNAME=defauL_log;fi
+	if [ -z "$LOGLEVEL" ];then LOGLEVEL=2;fi
+	
+	# define logpoint
+	case $LOGTYPE in
+		1|flashmode)	_LOGPOINT=$LOGPATH/flashlogs
+		;;
+		2|upgrademode) 	_LOGPOINT=$LOGPATH/upgradelogs
+		;;
+		3|custom)		_LOGPOINT=$LOGPATH/$LOGTYPE_CUSTOM
+		;;
+	esac
+	# check if logpoint already exist and create if there is non.
+	if [ ! -e $_LOGPOINT ]; then
+		mkdir $_LOGPOINT
+	fi
+	# setup logging file
+	_DATETIME=`date "+%Y-%m-%d_%H-%M-%S"`
+	LOGPOINT=$_LOGPOINT/$_DATETIME-$LOGNAME.log
+	if [ -e $LOGPOINT ]; then
+		# should not happen
+		rm -f $LOGPOINT
+	fi
+	
+	
+	# declare that logMsg has been initialized
+	LOGINIT=true
+	
+	#loglevel init
+	LT2 "logMsg Started"
+	LT3 "LOGSTATUS      set to $LOGSTATUS"
+	LT3 "LOGPATH        set to $LOGPATH"
+	LT3 "LOGTYPE        set to $LOGTYPE"
+	LT3 "LOGTYPE_CUSTOM set to $LOGTYPE_CUSTOM"
+	LT3 "LOGNAME        set to $LOGNAME"
+	LT3 "LOGLEVEL       set to $LOGLEVEL"
+	# setlogLevel
+	set_loglevel $LOGLEVEL
+}
+
+# set logMsg to enable or disable
+# - set_logMsg input1 or null
+# - input1 	-> true,1,enable or false,0,disable
+# - null	-> if no input this will toggle between on or off
+#
+set_logMsg(){
+if [ -n $1 ];then
+	# detect inputs
+	case $LOGSTATUS in
+		1|true|enable) LOGSTATUS=true
+			LT2 "logMsg set to True"
+			;;
+		0|false|disable) LOGSTATUS=false
+			LT2 "logMsg set to False"
+			;;
+	esac
+else
+	case $LOGSTATUS in
+		true) LOGSTATUS=false
+			LT2 "logMsg set to false"
+			;;
+		false) LOGSTATUS=true
+			LT2 "logMsg set to true"
+			;;
+	esac
+fi
+}
+
+set_loglevel(){
+	if [ ! -z "$1" ];then
+		LT2 "setting loglevel to $*"
+		case $1 in
+			1)	LT1=LT1
+				LT2=logMsg_dummy
+				LT3=logMsg_dummy
+				LT4=logMsg_dummy
+				LT2 "loglevel set to 1"
+				;;
+			2)	LT1=LT1
+				LT2=LT2
+				LT3=logMsg_dummy
+				LT4=logMsg_dummy
+				LT2 "loglevel set to 2"
+				;;
+			3)	LT1=LT1
+				LT2=LT2
+				LT3=LT3
+				LT4=logMsg_dummy
+				LT2 "loglevel set to 3"
+				;;
+			4)	LT1=LT1
+				LT2=LT2
+				LT3=LT3
+				LT4=LT4
+				LT2 "loglevel set to 4"
+				;;
+		esac
+	else
+		# this will disable logging.
+		LT1=LT1
+		LT2=logMsg_dummy
+		LT3=logMsg_dummy
+		LT4=logMsg_dummy
+	fi
+}
+
+# Main
+logMsg(){
+	local _MENSAHE
+	local _LOGTIME
+	if ($LOGSTATUS);then
+		_LOGTIME=`date "+%H:%M:%S"`
+		if [ ! -z "$*" ];then
+			_MENSAHE="$*"
+		else
+			read _MENSAHE
+		fi
+		if [ -n "$_MENSAHE" ]; then
+			echo "ASLib_logMsg:$_MENSAHE"
+			echo "$_LOGTIME $_MENSAHE" >> $LOGPOINT
+		fi
+	fi
+}
+
+logMsg_dummy(){
+	# dummy log message
+	return 0
+}
+
+# log tagging Me
+
+LT1(){ #stub
+	logMsg "$*"
+}
+LT2(){ #stub
+	logMsg "   # $*"
+}
+LT3(){ #stub
+	local IN
+	if [ ! -z "$*" ];then
+		logMsg "     $*"
+	else
+		read IN
+		if [ ! -z "$IN"	];then
+			logMsg "     $IN"
+		fi
+	fi
+}
+LT4(){ #stub
+	local IN
+	if [ ! -z "$*" ];then
+		logMsg "     $*"
+	else
+		read IN
+		if [ ! -z "$IN"	];then
+			logMsg "     $IN"
+		fi
+	fi
+}
